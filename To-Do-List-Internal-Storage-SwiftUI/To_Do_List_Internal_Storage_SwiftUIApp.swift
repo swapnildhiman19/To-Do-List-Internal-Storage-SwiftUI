@@ -14,7 +14,8 @@ struct To_Do_List_Internal_Storage_SwiftUIApp: App {
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
-            ContentView()
+//            ToDoListView()
+            CategoryView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .onChange(of: scenePhase) { oldValue, newValue in
                     // Save changes if app enters in background or inactive state

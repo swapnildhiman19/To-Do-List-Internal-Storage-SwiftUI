@@ -125,7 +125,7 @@ import SwiftUI
 
 import CoreData
 
-struct ContentView: View {
+struct ToDoListView: View {
     @Environment(\.managedObjectContext) private var viewContext
     
     @FetchRequest(sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)])
@@ -134,10 +134,24 @@ struct ContentView: View {
     @State private var showAddAlert : Bool = false
     @State private var newItemText : String = ""
     
+    @State private var searchText: String = "" // Adding the state for search text
+    
+    private var filteredPendingItems : [Item] {
+        if searchText.isEmpty {
+            return pendingItems.map { $0 } // Convert the FetchedResults<Item> into [Item]
+        } else {
+            // filter the items. Similar to NSPredicate in UIKit Swift implementation
+            // 'localizationCaseInsensititveCotnains' is like 'contains[cd]' in NSPredicate.
+            return pendingItems.filter {
+                $0.string?.localizedCaseInsensitiveContains(searchText) ?? false
+            }
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             List {
-                ForEach(pendingItems){ item in
+                ForEach(filteredPendingItems){ item in
                     HStack {
                         /*
                          Validation vs. Type System: The "non-optional" setting in Core Data is primarily a validation rule. It's enforced when you try to save the NSManagedObjectContext. If you try to save an Item where string is nil, the save operation will fail. However, it doesn't change the property's type in the generated Swift code. The Swift compiler doesn't know about this save-time rule at compile-time.
@@ -162,6 +176,8 @@ struct ContentView: View {
                 .onDelete(perform: deleteItems)
             }
             .navigationTitle("To Do List")
+            // Adding the searchable modifier to the list
+            .searchable(text: $searchText, placement: .navigationBarDrawer, prompt: "Search Items")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -212,7 +228,17 @@ struct ContentView: View {
     
     private func deleteItems(at offSets: IndexSet) {
         withAnimation {
-            offSets.map {pendingItems[$0]}.forEach(viewContext.delete)
+//            offSets.map {pendingItems[$0]}.forEach(viewContext.delete)
+//            saveContext()
+            
+            // Get the actual Item objects to delete from the filtered list
+            let itemsToDelete = offSets.map { filteredPendingItems[$0] }
+            
+            // Loop through the items you just identified
+            for item in itemsToDelete {
+                viewContext.delete(item)
+            }
+            
             saveContext()
         }
         /*
@@ -271,6 +297,6 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ToDoListView()
         .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
 }
