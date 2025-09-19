@@ -19,6 +19,8 @@ struct CategoryView : View {
     
     @State var newPendingCategoryText : String = ""
     
+    @State var categorySelected : Category?
+    
     var filteredPendingCategoryItems : [Category] {
         if searchText.isEmpty {
             return pendingCategoryItems.map { $0 }
@@ -44,10 +46,27 @@ struct CategoryView : View {
                     .onTapGesture {
                         // Here we need to call the ToDoList View for this Category Cell
                         // print("Cell with \(item.name ?? "NIL") has been tapped")
+                        self.categorySelected = item
                     }
                 }
                 // .onDelete(perform: deleteCategoryItems) //TODO: Deleting a Category should delete all the items present inside it
             }
+            .navigationDestination(isPresented: .init(
+                get: {
+                    self.categorySelected != nil
+                },
+                set: { isPresented in
+                    // When the user navigates back, isPresented becomes false
+                    if !isPresented{
+                        self.categorySelected = nil
+                    }
+                }
+            ),
+            destination: {
+                if let categorySelected = self.categorySelected {
+                    ToDoListView(parentCategory: categorySelected)
+                }
+            })
             .navigationTitle("Category To Do List")
             .searchable(text: $searchText, placement: .navigationBarDrawer, prompt: "Search To Do Category")
             .toolbar {
@@ -71,7 +90,7 @@ struct CategoryView : View {
                     newPendingCategoryText = ""
                 }
             } message: {
-//                Text("Please Enter New Category")
+                //                Text("Please Enter New Category")
             }
         }
     }

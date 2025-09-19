@@ -136,6 +136,22 @@ struct ToDoListView: View {
     
     @State private var searchText: String = "" // Adding the state for search text
     
+    let parentCategory: Category
+    
+    init(parentCategory: Category){
+        self.parentCategory = parentCategory
+        /*
+         pendingItems is the image on the wall. It's the final result—the list of to-do items you see and interact with. You can look at the image, count the items in it, but you can't just grab the image and replace it with a different one. It's a read-only view of the data.
+         _pendingItems is the projector itself. It's the underlying machine that creates the image. It has all the settings: which lens to use (sortDescriptors), what filter to apply (predicate), etc.
+         */
+        _pendingItems = FetchRequest<Item>(
+            sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
+            predicate: NSPredicate(format: "parentCategory == %@", parentCategory)
+        )
+        
+        print(parentCategory.name!)
+    }
+    
     private var filteredPendingItems : [Item] {
         if searchText.isEmpty {
             return pendingItems.map { $0 } // Convert the FetchedResults<Item> into [Item]
@@ -149,28 +165,150 @@ struct ToDoListView: View {
     }
     
     var body: some View {
-        NavigationStack {
+//        NavigationStack {
+        /*
+         Removing the Navigation Stack from here since Category View will give me
+         */
             List {
                 ForEach(filteredPendingItems){ item in
-                    HStack {
-                        /*
-                         Validation vs. Type System: The "non-optional" setting in Core Data is primarily a validation rule. It's enforced when you try to save the NSManagedObjectContext. If you try to save an Item where string is nil, the save operation will fail. However, it doesn't change the property's type in the generated Swift code. The Swift compiler doesn't know about this save-time rule at compile-time.
-                         Object Lifecycle: It's possible to have an Item object in memory that hasn't been fully populated yet. You could create a new Item (let newItem = Item(context: viewContext)) but not set its string property immediately. In that moment, newItem.string is nil. If the property were a non-optional String, this state would be impossible and would crash your app.
-                         Data Integrity: Your database could contain old data that was saved before you made the attribute non-optional. Swift's optionality protects your app from crashing if it fetches one of these old records where string is nil.
-                         */
-                        if let title = item.string {
-                            Text(title)
-                            Spacer()
-                            if item.isChecked {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            }
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        toggleIsChecked(for: item)
-                        saveContext()
+//                    HStack {
+//                        /*
+//                         Validation vs. Type System: The "non-optional" setting in Core Data is primarily a validation rule. It's enforced when you try to save the NSManagedObjectContext. If you try to save an Item where string is nil, the save operation will fail. However, it doesn't change the property's type in the generated Swift code. The Swift compiler doesn't know about this save-time rule at compile-time.
+//                         Object Lifecycle: It's possible to have an Item object in memory that hasn't been fully populated yet. You could create a new Item (let newItem = Item(context: viewContext)) but not set its string property immediately. In that moment, newItem.string is nil. If the property were a non-optional String, this state would be impossible and would crash your app.
+//                         Data Integrity: Your database could contain old data that was saved before you made the attribute non-optional. Swift's optionality protects your app from crashing if it fetches one of these old records where string is nil.
+//                         */
+//                        if let title = item.string {
+//                            Text(title)
+//                            Spacer()
+//                            if item.isChecked {
+//                                Image(systemName: "checkmark.circle.fill")
+//                                    .foregroundStyle(.green)
+//                            }
+//                        }
+//                    }
+//                    .contentShape(Rectangle())
+//                    .onTapGesture {
+//                        toggleIsChecked(for: item)
+//                    }
+                    
+                    //MARK: WHY WE ARE USING SEPARATE TODOITEMROW ?
+                    /*
+                     Let’s break your question into **two parts** as you requested: FIRST in simple, layman terms, then in clear, detailed technical terms—with diagrams, code usage of `$` and all the SwiftUI/Core Data details.
+
+                     ***
+
+                     ## **Layman's Explanation**
+
+                     ### **1. Why Did Tapping to Check Only Work Once in the Old Version?**
+                     Imagine you want to update your to-do list by tapping—sometimes it works, sometimes it doesn’t update.
+                     It’s like having a whiteboard (“FetchedResults”) that keeps track of all your items. If you copy the whiteboard to a “piece of paper” (a new array) and then tell your assistant (SwiftUI) to look at the paper, the assistant might not see new changes or might get confused about which row on the paper matches _the real row_ on the whiteboard.
+
+                     #### - **Old Code:**
+                     You filtered your results into a _new_ array (`filteredPendingItems`) and asked SwiftUI to display and update that new list.
+                     But SwiftUI wants to track your data by “address”—and filtering makes new addresses—so it gets confused after the first change, and the UI doesn’t always update properly.
+
+                     #### - **New Code:**
+                     When you show each row using `ToDoItemRow(item: item)` with an `@ObservedObject`, that row directly watches the same underlying Core Data object. So any change, even from a tap, _automatically_ triggers an update—the UI always stays in sync!
+
+                     ***
+
+                     ### **2. Why Didn’t You Use `$` Sign with Item, and Where Should It Be Used?**
+                     - `$` means “the binding” to data—two-way connection (read and write) with SwiftUI state.
+                     - You use `$something` when:
+                       - You want the UI to both display and directly update a particular value (e.g. a form input bound to a `@State` property).
+                       - The property is marked with `@State`, `@Binding`, or certain collection types (`ForEach($array) {...}`).
+
+                     - With `@ObservedObject`, you don’t use `$` directly; you use the actual object, because SwiftUI already watches for data changes inside that object.
+
+                     **Think:**
+                     - Use `$` (“the binding”) for *value types* (`@State`, `@Binding`, arrays).
+                     - Use the object directly when it is an *object type* (`@ObservedObject`), because it handles its own notifications.
+
+                     ***
+
+                     ## **Technical Explanation**
+
+                     ### **A. Core Reason for UI Sync/Update Problem: SwiftUI’s Identity Tracking and ForEach**
+
+                     - `ForEach` in SwiftUI expects a list of items with stable identity—so that when you update an item, it knows exactly which visual/row to update.
+                     - If you use a _filtered_ array (`filteredPendingItems`), you’re creating new arrays and potentially new references each time—you break the direct bond between the UI and the underlying Core Data object (“this is a new piece of paper, not the original whiteboard”).
+                     - With `FetchedResults`, identity and change tracking are solid—SwiftUI sees updates via Core Data’s built-in notifications.
+
+                     #### **Old Pattern: Fragile**
+                     ```swift
+                     ForEach(filteredPendingItems) { item in
+                         // changes to 'item' may not always reflect in the correct row, or stale UI may appear
+                     }
+                     ```
+
+                     #### **New Pattern: Robust**
+                     ```swift
+                     ForEach(pendingItems) { item in
+                         // filtering done in if-clause or via FetchRequest predicate
+                         ToDoItemRow(item: item) // @ObservedObject means UI always updates to match Core Data changes
+                     }
+                     ```
+
+                     ***
+
+                     ### **B. Why $ (Dollar Sign) is Needed for @State/@Binding but Not for @ObservedObject**
+
+                     #### **1. @State / @Binding (“Value”/Struct Types)**
+                     - `@State var myValue: Int`
+                     - `$myValue` is a *binding*—it lets other views (like a Slider or TextField) both read and update `myValue`.
+                       - Example: `TextField("Enter", text: $myValue)`
+
+                     #### **2. @ObservedObject (“Reference”/Class Types)**
+                     - View watches an object for published changes.
+                     - You access properties directly (e.g. `item.string`), because the observed object already notifies its changes.
+                       - Example: `ToDoItemRow(item: item)`, where `item` is an observed Core Data object.
+
+                     #### **In a List/ForEach:**
+                     - `ForEach($array) { $element in ... }`
+                       lets you update _values_ inside an array via two-way bindings (`@State` array).
+                     - `ForEach(fetchedResults) { item in ... }`
+                       gives you Core Data objects which are classes (`NSManagedObject`), watched via `@ObservedObject`. No need for dollar sign; providing the object is enough.
+
+                     ***
+
+                     ### **C. Your Entities and Relationships (From Screenshots)**
+
+                     - Each `Category` (with a name/timestamp) has many `Item`s (To-Do’s).
+                     - Each `Item` has `id`, `isChecked`, `string`, timestamp, and a relationship to its parent `Category`.
+
+                     This aligns perfectly with your pattern of launching a ToDoList for a tapped Category.
+
+                     ***
+
+                     ### **D. Summary Table: $ Usage**
+
+                     | Property Type        | Declaration          | Usage in UI            | When to use $ |
+                     |----------------------|---------------------|------------------------|:------------:|
+                     | @State (value type)  | @State var text: String | TextField(text: $text)   |    ✅        |
+                     | @Binding             | @Binding var name: String| TextField(text: $name)|    ✅        |
+                     | @ObservedObject      | @ObservedObject var item: Item| item.string           |    ❌        |
+
+                     ***
+
+                     ## **Summary – Why It Now Works**
+
+                     - The new approach uses **direct observation of the Core Data object** via `@ObservedObject`.
+                     - Each list row now keeps a stable reference to its underlying data—when you tap, Core Data changes are immediately noticed and UI gets updated correctly.
+                     - **No need for `$` when passing objects!** SwiftUI handles updates for you via its object-watching system.
+
+                     ***
+
+                     ## **Extra: When to Use $ Binding and When Not**
+
+                     - **Use $ (binding):** when two-way UI ↔ state sync for *value types* (primitive types, or arrays via `@State`).
+                     - **Don’t use $ (no binding):** when using Core Data/ObservableObject classes; just pass the reference (`item: Item`), and use `@ObservedObject`.
+
+                     ***
+                     */
+                    ToDoItemRow(item: item) // Use the new row view
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            toggleIsChecked(for: item)
                     }
                 }
                 .onDelete(perform: deleteItems)
@@ -201,7 +339,7 @@ struct ToDoListView: View {
             } message: {
                 Text("Please enter the new Item")
             }
-        }
+//        }
     }
     
     private func addItem(text: String){
@@ -210,6 +348,7 @@ struct ToDoListView: View {
         newItem.id = UUID()
         newItem.string = text
         newItem.isChecked = false
+        newItem.parentCategory = parentCategory
         
         saveContext()
         newItemText = ""
@@ -296,7 +435,25 @@ struct ToDoListView: View {
     
 }
 
+struct ToDoItemRow: View {
+    @ObservedObject var item: Item
+
+    var body: some View {
+        HStack {
+            if let title = item.string {
+                Text(title)
+                Spacer()
+                if item.isChecked {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+    }
+}
+
+
 #Preview {
-    ToDoListView()
+    ToDoListView(parentCategory: Category(context: PersistenceController.shared.container.viewContext))
         .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
 }
