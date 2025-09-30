@@ -50,6 +50,7 @@ struct CategoryView : View {
                     }
                 }
                 // .onDelete(perform: deleteCategoryItems) //TODO: Deleting a Category should delete all the items present inside it
+                .onDelete(perform: deleteCategoryItems)
             }
             .navigationDestination(isPresented: .init(
                 get: {
@@ -114,6 +115,18 @@ struct CategoryView : View {
         }
     }
     
+    private func deleteCategoryItems(at offSet: IndexSet) {
+        /*
+         Delete Rule Relationship is set to Cascade meaning deletion of Category will delete all the items present in it.
+         */
+        let actualCategoriesToDelete = offSet.map { filteredPendingCategoryItems[$0] }
+        
+        for category in actualCategoriesToDelete {
+            viewContext.delete(category)
+        }
+        
+        saveContext()
+    }
 }
 
 #Preview {
